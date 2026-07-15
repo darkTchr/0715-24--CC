@@ -4,7 +4,6 @@
  * 客户端不能直接调用 DeepSeek API
  */
 import { NextRequest, NextResponse } from 'next/server';
-import type { PostureIssueType } from '@/types/pose';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE = 'https://api.deepseek.com';

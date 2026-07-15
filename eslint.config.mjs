@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // CI 脚本（Node 环境，非 Next.js 项目代码）
+    "scripts/**",
   ]),
 ]);
 

@@ -47,12 +47,13 @@ export function usePose(enabled: boolean): UsePoseReturn {
       setIsLoading(false);
 
       intervalRef.current = setInterval(() => {
-        const landmarker = poseLandmarkerRef.current as any;
+        // MediaPipe PoseLandmarker 实例（运行时动态导入）
+        const landmarker = poseLandmarkerRef.current as { detectForVideo: (video: HTMLVideoElement, timestamp: number) => { landmarks: unknown[] } | null } | null;
         const video = videoRef.current;
         if (!landmarker || !video || video.readyState < 2) return;
         try {
           const result = landmarker.detectForVideo(video, performance.now());
-          if (result?.landmarks?.length > 0) {
+          if (result && result.landmarks && result.landmarks.length > 0) {
             const rawLandmarks = result.landmarks[0] as Landmark[];
             if (hasValidPose(rawLandmarks)) {
               setAnalysis(analyzePosture(rawLandmarks));

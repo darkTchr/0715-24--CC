@@ -3,7 +3,7 @@
  * stats/page.tsx — 训练统计页面
  * 打卡热力图 + 趋势图表 + 统计摘要
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { TrainingRecord } from '@/types/training';
 import type { DailyCheckin, StatsSummary } from '@/lib/stats';
 import { loadRecords, computeStatsSummary, computeDailyCheckins } from '@/lib/stats';
@@ -11,11 +11,7 @@ import { CheckinCalendar } from '@/components/stats/checkin-calendar';
 import { TrainingCharts } from '@/components/stats/training-charts';
 
 export default function StatsPage() {
-  const [records, setRecords] = useState<TrainingRecord[]>([]);
-
-  useEffect(() => {
-    setRecords(loadRecords());
-  }, []);
+  const [records] = useState<TrainingRecord[]>(() => loadRecords());
 
   const summary: StatsSummary = useMemo(() => computeStatsSummary(records), [records]);
   const dailyData: DailyCheckin[] = useMemo(() => computeDailyCheckins(records), [records]);

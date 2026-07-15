@@ -8,7 +8,7 @@ import { useTraining } from '@/hooks/use-training';
 import { useSpeech } from '@/hooks/use-speech';
 import { useCamera } from '@/hooks/use-camera';
 import { usePose } from '@/hooks/use-pose';
-import { getAllCourses, getCoursesByFilter } from '@/lib/course-data';
+import { getCoursesByFilter } from '@/lib/course-data';
 import { TrainingTimer } from '@/components/training/training-timer';
 import { VoiceCoach } from '@/components/training/voice-coach';
 import { PostureCorrector } from '@/components/camera/posture-corrector';
@@ -38,7 +38,7 @@ export default function TrainPage() {
       el.srcObject = camera.stream;
       pose.initPose(el);
     }
-  }, [camera.isActive, camera.stream, pose.initPose]);
+  }, [camera.isActive, camera.stream, pose]);
 
   // 训练完成
   if (training.state.phase === 'complete') {

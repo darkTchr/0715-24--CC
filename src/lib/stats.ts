@@ -128,7 +128,7 @@ function computeStreaks(completed: TrainingRecord[]): { currentStreak: number; m
   let currentStreak = 0;
   const startDate = dates[0] === today ? today : dates[0] === yesterday ? yesterday : null;
   if (startDate) {
-    let checkDate = new Date(startDate);
+    const checkDate = new Date(startDate);
     for (const d of dates) {
       const expected = checkDate.toISOString().substring(0, 10);
       if (d === expected) {

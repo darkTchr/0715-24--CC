@@ -23,18 +23,6 @@ function dist(a: Landmark, b: Landmark): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
 }
 
-/** 计算三点角度（中间点为顶点，返回度数） */
-function angle(a: Landmark, vertex: Landmark, b: Landmark): number {
-  const ab = [a.x - vertex.x, a.y - vertex.y];
-  const cb = [b.x - vertex.x, b.y - vertex.y];
-  const dot = ab[0] * cb[0] + ab[1] * cb[1];
-  const magAB = Math.sqrt(ab[0] ** 2 + ab[1] ** 2);
-  const magCB = Math.sqrt(cb[0] ** 2 + cb[1] ** 2);
-  if (magAB < 1e-6 || magCB < 1e-6) return 0;
-  const rad = Math.acos(Math.max(-1, Math.min(1, dot / (magAB * magCB))));
-  return (rad * 180) / Math.PI;
-}
-
 /**
  * 检测驼背：肩髋连线与垂直线的角度
  * 11: left_shoulder, 23: left_hip（或用右侧）
@@ -46,7 +34,7 @@ function detectHunchback(landmarks: Landmark[]): PostureIssue | null {
 
   // 肩在髋前方过远 = 驼背
   const forwardLean = (shoulder.x - hip.x) * 100;
-  const severity = Math.min(1, Math.max(0, forwardLean / 20));
+  const severity = Math.min(1, Math.max(0, forwardLean / HUNCHBACK_ANGLE_THRESHOLD));
 
   if (severity < 0.3) return null;
 
@@ -82,7 +70,7 @@ function detectShoulderRaise(landmarks: Landmark[]): PostureIssue | null {
   if (issues.length === 0) return null;
 
   const avgDist = issues.reduce((a, b) => a + b, 0) / issues.length;
-  const severity = Math.min(1, Math.max(0, (0.12 - avgDist) / 0.06));
+  const severity = Math.min(1, Math.max(0, (SHOULDER_RAISE_RATIO * 2 - avgDist) / SHOULDER_RAISE_RATIO));
 
   if (severity < 0.3) return null;
 
