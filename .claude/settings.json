@@ -1,0 +1,76 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Bash(npm test *)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Read(./.env)",
+      "Read(./secrets/**)",
+      "Bash(git push --force)",
+      "Bash(git reset --hard)",
+      "Bash(sudo *)",
+      "Bash(curl * | bash)"
+    ]
+  },
+    "allowedTools": [
+    "Read",
+    "Glob",
+    "Grep",
+
+    "Edit(src/**)",
+    "Write(src/**)",
+    "Write(tests/**)",
+    "Write(docs/**)",
+
+    "Bash(npm *)",
+    "Bash(node *)",
+    "Bash(git status)",
+    "Bash(git diff *)",
+    "Bash(git add *)",
+    "Bash(git commit *)",
+    "Bash(npx *)",
+
+    "Bash(*-h*)", 
+    "Bash(*--help)", 
+
+    "mcp__context7__*",
+    "mcp__exa__*"
+  ],
+
+  "disallowedTools": [
+    "Bash(rm -rf *)",
+    "Bash(sudo *)",
+    "Bash(curl * | bash)",
+    "Write(.env*)",
+    "Write(**/secrets/*)"
+  ],
+  "audit": {
+    "enabled": true,
+    "logPath": "./logs/claude-audit/",
+    "retention": "90d",
+    "logLevel": "detailed",
+
+    "events": [
+      "tool_use",
+      "file_access",
+      "command_execution",
+      "permission_change",
+      "error"
+    ],
+
+    "sensitivePatterns": [
+      "**/secrets/**",
+      "**/.env*",
+      "**/credentials*"
+    ]
+  }
+}

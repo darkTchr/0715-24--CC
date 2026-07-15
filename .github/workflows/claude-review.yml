@@ -1,0 +1,44 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+# 权限配置：授予必要的GitHub权限
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-review:
+    # 条件：PR事件 或 Issue评论中包含@claude
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude'))
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史，用于diff比较
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # API密钥（必须在仓库Secrets中配置）
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # 可选：指定模型
+          model: "claude-sonnet-4-6-20250929"
+
+          # 可选：最大token数
+          max_tokens: 4096
+
+          # 可选：超时时间（秒）
+          timeout: 300

@@ -1,0 +1,29 @@
+# .github/workflows/security.yml
+name: Security Review
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Security Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          command: "/security-review"
+
+      - name: Check for Critical Issues
+        run: |
+          # 解析审查结果，如有高危问题则失败
+          if grep -q "Critical" claude-review-output.md; then
+            echo "::error::发现高危安全问题，请修复后重新提交"
+            exit 1
+          fi

@@ -1,0 +1,41 @@
+// .mcp.json
+{
+  "mcpServers": {
+    // 完全信任的内部服务器
+    "internal-api": {
+      "command": "node",
+      "args": ["./mcp-servers/internal-api/index.js"],
+      "trust": "full",
+      "env": {
+        "API_KEY": "${INTERNAL_API_KEY}"
+      }
+    },
+
+    // 部分信任的第三方服务器
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "trust": "limited",
+      "allowedMethods": [
+        "resolve_library_uri",
+        "search_library_docs"
+      ]
+    },
+
+    // 不信任但需要使用的服务器
+    "external-tool": {
+      "command": "npx",
+      "args": ["-y", "external-mcp-tool"],
+      "trust": "none",
+      "sandboxed": true,
+      "timeout": 30000
+    }
+  },
+
+  // 全局MCP安全设置
+  "security": {
+    "requireHttps": true,
+    "maxConcurrentConnections": 5,
+    "defaultTimeout": 60000
+  }
+}

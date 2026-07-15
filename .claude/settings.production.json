@@ -1,0 +1,9 @@
+{
+  "allowedTools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(npm test)",
+    "Bash(npm run lint)"
+  ]
+}
