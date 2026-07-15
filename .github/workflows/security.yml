@@ -1,29 +1,121 @@
-# .github/workflows/security.yml
-name: Security Review
+# Security Scan — 安全扫描流水线
+# 触发: PR 涉及源码/依赖变更 + 每周定时扫描 main
+
+name: Security Scan
 
 on:
   pull_request:
+    branches: [main, develop]
     paths:
       - 'src/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'package-lock.yaml'
+  schedule:
+    - cron: '0 18 * * 1'  # 每周一凌晨2:00 CST
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
-  security:
+  # ===== 阶段1: npm 依赖审计 =====
+  npm-audit:
+    name: npm Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Run Security Review
-        uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-node@v4
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          command: "/security-review"
-
-      - name: Check for Critical Issues
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - name: Run npm audit
         run: |
-          # 解析审查结果，如有高危问题则失败
-          if grep -q "Critical" claude-review-output.md; then
-            echo "::error::发现高危安全问题，请修复后重新提交"
+          npm audit --audit-level=high --json > /tmp/audit-result.json || true
+      - name: Analyze Audit Result
+        run: node scripts/ci/security-check.js /tmp/audit-result.json /tmp/security-report.json
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: /tmp/security-report.json
+
+  # ===== 阶段2: 硬编码密钥检测 =====
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for hardcoded secrets
+        run: |
+          echo "=== 扫描硬编码密钥 ==="
+          PATTERNS=(
+            "sk-[a-zA-Z0-9]{32,}"
+            "AIza[0-9A-Za-z_-]{35}"
+            "-----BEGIN.*PRIVATE KEY-----"
+            "ghp_[a-zA-Z0-9]{36}"
+            "gho_[a-zA-Z0-9]{36}"
+            "xox[baprs]-[a-zA-Z0-9]{10,}"
+            "eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}"
+          )
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            MATCHES=$(grep -rInE "$pattern" src/ scripts/ --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" 2>/dev/null || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::warning::疑似密钥: $MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ $FOUND -eq 1 ]; then
+            echo "::error::代码中存在疑似硬编码密钥，请使用 Actions Secrets"
             exit 1
           fi
+          echo "✅ 密钥检测通过"
+
+  # ===== 阶段3: Claude AI 安全审查 =====
+  claude-security:
+    name: Claude Security Review
+    runs-on: ubuntu-latest
+    needs: npm-audit
+    if: github.event_name == 'pull_request' && vars.ANTHROPIC_API_KEY != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Audit Report
+        uses: actions/download-artifact@v4
+        with:
+          name: security-report
+          path: /tmp/
+        continue-on-error: true
+
+      - name: Collect Changed Files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }}
+            git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(ts|tsx|js|jsx)$' > /tmp/changed_files.txt || echo "src/" > /tmp/changed_files.txt
+          else
+            echo "src/" > /tmp/changed_files.txt
+          fi
+
+      - name: Claude Security Analysis
+        run: node scripts/ci/security-review.js /tmp/changed_files.txt /tmp/security-report.json /tmp/claude-security.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post Security Report
+        if: always()
+        run: node scripts/ci/post-security-report.js /tmp/security-report.json /tmp/claude-security.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

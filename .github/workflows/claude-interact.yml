@@ -1,0 +1,69 @@
+# @claude PR 评论交互
+# 触发: PR 评论中包含 @claude
+# 支持命令: review / explain / suggest / security / help
+
+name: "@claude Comment Interact"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  claude-interact:
+    name: Claude Interact
+    # 仅处理 PR 评论（非 Issue）且包含 @claude
+    if: |
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '@claude') &&
+      !contains(github.event.comment.body, '🤖')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Get PR Diff
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          # 获取 base ref
+          BASE_REF=$(gh pr view $PR_NUMBER --json baseRefName -q '.baseRefName' 2>/dev/null || echo "main")
+          echo "BASE_REF=$BASE_REF" >> $GITHUB_ENV
+          git fetch origin $BASE_REF
+          git diff origin/$BASE_REF...HEAD > /tmp/pr_diff.txt || echo "diff empty" > /tmp/pr_diff.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse @claude Command
+        run: node scripts/ci/parse-claude-command.js /tmp/pr_diff.txt /tmp/command-context.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+
+      - name: Claude AI Process
+        run: node scripts/ci/claude-interact.js /tmp/command-context.json /tmp/claude-response.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Reply to Comment
+        if: always()
+        run: node scripts/ci/reply-comment.js /tmp/claude-response.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          COMMENT_ID: ${{ github.event.comment.id }}
