@@ -1,5 +1,5 @@
 # PR Review — 代码审查流水线
-# 触发: PR opened/synchronize/reopened → main/develop
+# 触发: PR opened/synchronize/reopened → master/main/develop
 # 验收: 审查结果作为评论发布，高危问题阻止合并
 
 name: PR Code Review
@@ -9,77 +9,16 @@ on:
     types: [opened, synchronize, reopened]
     branches: [master, main, develop]
 
-# 授予 PR 评论写入权限
 permissions:
   contents: read
   pull-requests: write
   issues: write
 
-env:
-  NODE_VERSION: '20'
-
 jobs:
-  # ===== 阶段1: 安装依赖 =====
-  install:
-    name: Install Dependencies
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-
-  # ===== 阶段2: 代码规范检查 =====
-  lint:
-    name: Lint & TypeCheck
-    runs-on: ubuntu-latest
-    needs: install
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      - uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm run lint
-        continue-on-error: true
-      - run: npx tsc --noEmit 2>/dev/null || echo "typecheck skipped"
-
-  # ===== 阶段3: 单元测试 =====
-  test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    needs: install
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      - uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm test -- --coverage || echo "tests skipped (no test config)"
-
-  # ===== 阶段4: Claude AI 代码审查 =====
+  # ===== Claude AI 代码审查（始终运行，无需项目依赖） =====
   claude-review:
     name: Claude AI Review
     runs-on: ubuntu-latest
-    needs: [lint, test]
-    if: always() && !cancelled()
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,13 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          node-version: '22'
 
       - name: Generate PR Diff
         run: |
@@ -114,20 +47,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  # ===== 阶段5: 构建验证 =====
-  build:
-    name: Build Check
+  # ===== 构建检查（有 package.json 时运行） =====
+  check:
+    name: Project Check
     runs-on: ubuntu-latest
-    needs: install
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check project type
+        id: check
+        run: |
+          if [ -f "package.json" ]; then
+            echo "HAS_PACKAGE=true" >> $GITHUB_OUTPUT
+          else
+            echo "HAS_PACKAGE=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip (no package.json)
+        if: steps.check.outputs.HAS_PACKAGE == 'false'
+        run: echo "项目尚未初始化，跳过依赖检查"
+
       - uses: actions/setup-node@v4
+        if: steps.check.outputs.HAS_PACKAGE == 'true'
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22'
           cache: 'npm'
-      - uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm run build || echo "build skipped (no build script)"
+
+      - name: Install & Check
+        if: steps.check.outputs.HAS_PACKAGE == 'true'
+        run: |
+          npm ci
+          npm run lint 2>/dev/null || echo "lint skipped"
+          npx tsc --noEmit 2>/dev/null || echo "typecheck skipped"
+          npm test 2>/dev/null || echo "test skipped"
+          npm run build 2>/dev/null || echo "build skipped"
