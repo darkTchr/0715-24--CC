@@ -80,7 +80,7 @@ jobs:
       - name: Claude Security Analysis
         run: node scripts/ci/security-review.js /tmp/changed_files.txt /tmp/audit-result.json /tmp/claude-security.json
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEKSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
       - name: Post Security Report
         if: always()
