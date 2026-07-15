@@ -7,7 +7,7 @@ name: PR Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, develop]
+    branches: [master, main, develop]
 
 # 授予 PR 评论写入权限
 permissions:
