@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
- * claude-interact.js — 根据解析的@claude命令调用Anthropic API生成回复
+ * claude-interact.js — 根据解析的@claude命令调用 DeepSeek API 生成回复
  * 用法: node claude-interact.js <command_context_json> <output_json>
  * 输出: JSON { response, command, model, usage }
  */
 
 const fs = require('fs');
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6-20250929';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const DEEPSEEK_BASE = 'https://api.deepseek.com';
 
 // ============================================================
 // 各命令的 System Prompt
@@ -74,86 +75,56 @@ const SYSTEM_PROMPTS = {
 // 各命令的 User Prompt 构建
 // ============================================================
 function buildUserPrompt(context, diffContent) {
-  const { command, args, commentBody, codeBlocks, fileRefs, changedFiles } = context;
-
-  let prompt = '';
+  const { command, args, codeBlocks, fileRefs, changedFiles } = context;
 
   switch (command) {
     case 'review': {
       const targetFiles = args || fileRefs.join(', ');
-      prompt = `请审查以下PR变更`;
-
-      if (targetFiles) {
-        prompt += `，重点关注: ${targetFiles}`;
-      }
+      let prompt = `请审查以下PR变更`;
+      if (targetFiles) prompt += `，重点关注: ${targetFiles}`;
       prompt += `。\n\n变更文件: ${changedFiles.join(', ') || '见diff'}`;
       prompt += `\n\n## PR Diff\n\`\`\`diff\n${truncate(diffContent, 60000)}\n\`\`\``;
-      break;
+      return prompt;
     }
 
     case 'explain': {
-      // 优先使用代码块内容，其次args，再其次文件引用
       const codeToExplain = codeBlocks.length > 0
         ? codeBlocks.map(b => `\`\`\`${b.language}\n${b.code}\n\`\`\``).join('\n\n')
         : args;
-
-      prompt = `请解释以下代码：\n\n${codeToExplain || '（请用户提供代码片段）'}`;
-
-      // 附加文件上下文
-      if (fileRefs.length > 0) {
-        prompt += `\n\n相关文件: ${fileRefs.join(', ')}`;
-      }
-      break;
+      let prompt = `请解释以下代码：\n\n${codeToExplain || '（请用户提供代码片段）'}`;
+      if (fileRefs.length > 0) prompt += `\n\n相关文件: ${fileRefs.join(', ')}`;
+      return prompt;
     }
 
     case 'suggest': {
       const targetFiles = fileRefs.length > 0 ? fileRefs.join(', ') : (args || '全部变更');
-
-      prompt = `请为以下代码提供改进建议，聚焦: ${targetFiles}`;
-
-      if (diffContent) {
-        prompt += `\n\n## 代码变更\n\`\`\`diff\n${truncate(diffContent, 50000)}\n\`\`\``;
-      }
-
+      let prompt = `请为以下代码提供改进建议，聚焦: ${targetFiles}`;
+      if (diffContent) prompt += `\n\n## 代码变更\n\`\`\`diff\n${truncate(diffContent, 50000)}\n\`\`\``;
       if (codeBlocks.length > 0) {
         prompt += `\n\n## 关注的代码片段\n${codeBlocks.map(b => `\`\`\`${b.language}\n${b.code}\n\`\`\``).join('\n\n')}`;
       }
-      break;
+      return prompt;
     }
 
     case 'security': {
-      prompt = `请对以下代码进行深度安全审查。`;
-
-      if (diffContent) {
-        prompt += `\n\n## 代码变更\n\`\`\`diff\n${truncate(diffContent, 50000)}\n\`\`\``;
-      }
-
-      if (changedFiles.length > 0) {
-        prompt += `\n\n变更文件列表:\n${changedFiles.map(f => `- ${f}`).join('\n')}`;
-      }
-      break;
+      let prompt = `请对以下代码进行深度安全审查。`;
+      if (diffContent) prompt += `\n\n## 代码变更\n\`\`\`diff\n${truncate(diffContent, 50000)}\n\`\`\``;
+      if (changedFiles.length > 0) prompt += `\n\n变更文件列表:\n${changedFiles.map(f => `- ${f}`).join('\n')}`;
+      return prompt;
     }
 
     default:
-      prompt = commentBody || '请提供帮助。';
+      return '';
   }
-
-  return prompt;
 }
 
-/** 截断文本到指定长度 */
 function truncate(text, maxLen) {
   if (!text || text.length <= maxLen) return text || '';
   return text.substring(0, maxLen) + `\n\n... (已截断，原文 ${text.length} 字符)`;
 }
 
-/** 读取PR diff内容 */
 function readDiff(diffFile) {
-  try {
-    return fs.readFileSync(diffFile, 'utf-8');
-  } catch {
-    return '';
-  }
+  try { return fs.readFileSync(diffFile, 'utf-8'); } catch { return ''; }
 }
 
 // ============================================================
@@ -163,7 +134,6 @@ async function main() {
   const contextFile = process.argv[2] || '/tmp/command-context.json';
   const outputFile = process.argv[3] || '/tmp/claude-response.json';
 
-  // --- 读取上下文 ---
   let context;
   try {
     context = JSON.parse(fs.readFileSync(contextFile, 'utf-8'));
@@ -172,98 +142,85 @@ async function main() {
     process.exit(1);
   }
 
-  // --- 处理help命令（直接返回，不调API） ---
+  // help 命令直接返回，不调 API
   if (context.command === 'help') {
-    console.log('help命令，跳过API调用');
-    const helpResponse = {
-      // eslint-disable-next-line
-      response: '## 🤖 @claude 命令帮助\n\n' +
-        '| 命令 | 说明 |\n|------|------|\n' +
-        '| `@claude review` | 审查PR全部代码变更 |\n' +
-        '| `@claude review `file`` | 审查指定文件 |\n' +
-        '| `@claude explain `code`` | 解释代码片段 |\n' +
-        '| `@claude suggest` | 提供代码改进建议 |\n' +
-        '| `@claude security` | 深度安全审查 |\n' +
-        '| `@claude help` | 显示此帮助 |',
-      command: 'help',
-      isHelp: true,
-    };
-    fs.writeFileSync(outputFile, JSON.stringify(helpResponse, null, 2));
+    const helpText = '## 🤖 @claude 命令帮助\n\n' +
+      '| 命令 | 说明 |\n|------|------|\n' +
+      '| `@claude review` | 审查PR全部代码变更 |\n' +
+      '| `@claude review `file`` | 审查指定文件 |\n' +
+      '| `@claude explain `code`` | 解释代码片段 |\n' +
+      '| `@claude suggest` | 提供代码改进建议 |\n' +
+      '| `@claude security` | 深度安全审查 |\n' +
+      '| `@claude help` | 显示此帮助 |';
+    fs.writeFileSync(outputFile, JSON.stringify({ response: helpText, command: 'help', isHelp: true }, null, 2));
     process.exit(0);
   }
 
-  // --- 检查API Key ---
-  if (!ANTHROPIC_API_KEY) {
-    console.error('ERROR: ANTHROPIC_API_KEY 未设置');
-    const fallback = {
-      response: '⚠️ Claude AI 未配置（缺少 ANTHROPIC_API_KEY），请联系仓库管理员设置密钥。',
+  if (!DEEPSEEK_API_KEY) {
+    console.error('ERROR: DEEPSEEK_API_KEY 未设置');
+    fs.writeFileSync(outputFile, JSON.stringify({
+      response: '⚠️ AI 未配置（缺少 DEEPSEEK_API_KEY），请联系仓库管理员设置。',
       command: context.command,
       error: 'NO_API_KEY',
-    };
-    fs.writeFileSync(outputFile, JSON.stringify(fallback, null, 2));
+    }, null, 2));
     process.exit(1);
   }
 
-  // --- 读取PR diff ---
   const diffContent = readDiff(context.diffFile || '/tmp/pr_diff.txt');
-
-  // --- 构建prompt ---
   const systemPrompt = SYSTEM_PROMPTS[context.command] || SYSTEM_PROMPTS.review;
-  const userPrompt = buildUserPrompt(context, diffContent);
+  const userPrompt = buildUserPrompt(context, diffContent) || context.commentBody || '请提供帮助。';
 
   console.log(`命令: ${context.command}, prompt长度: ${userPrompt.length}`);
 
-  // --- 调用 Anthropic API ---
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model: DEEPSEEK_MODEL,
         max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       console.error(`API错误 HTTP ${response.status}: ${errText}`);
-      const fallback = {
-        response: `⚠️ Claude API调用失败 (HTTP ${response.status})，请稍后重试。\n\n错误详情: ${errText.substring(0, 200)}`,
+      fs.writeFileSync(outputFile, JSON.stringify({
+        response: `⚠️ DeepSeek API调用失败 (HTTP ${response.status})，请稍后重试。`,
         command: context.command,
         error: `HTTP_${response.status}`,
-      };
-      fs.writeFileSync(outputFile, JSON.stringify(fallback, null, 2));
+      }, null, 2));
       process.exit(1);
     }
 
     const data = await response.json();
-    const replyText = data.content?.[0]?.text || '（空响应）';
+    const replyText = data.choices?.[0]?.message?.content || '（空响应）';
 
     const result = {
       response: replyText,
       command: context.command,
-      model: CLAUDE_MODEL,
+      model: DEEPSEEK_MODEL,
       usage: data.usage || null,
       timestamp: new Date().toISOString(),
     };
 
     fs.writeFileSync(outputFile, JSON.stringify(result, null, 2));
-    console.log(`Claude回复长度: ${replyText.length}, tokens: ${JSON.stringify(data.usage)}`);
+    console.log(`回复长度: ${replyText.length}, tokens: ${JSON.stringify(data.usage)}`);
 
   } catch (err) {
     console.error(`API调用异常: ${err.message}`);
-    const fallback = {
-      response: `⚠️ Claude API调用异常: ${err.message}`,
+    fs.writeFileSync(outputFile, JSON.stringify({
+      response: `⚠️ API调用异常: ${err.message}`,
       command: context.command,
       error: 'NETWORK_ERROR',
-    };
-    fs.writeFileSync(outputFile, JSON.stringify(fallback, null, 2));
+    }, null, 2));
     process.exit(1);
   }
 }

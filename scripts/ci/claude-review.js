@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * claude-review.js — 调用 Anthropic API 审查 PR 代码变更
+ * claude-review.js — 调用 DeepSeek API 审查 PR 代码变更
  * 用法: node claude-review.js <diff_file> <output_json>
  * 输出: JSON { summary, findings: [{severity, file, line, description, suggestion}] }
  */
 
 const fs = require('fs');
-const path = require('path');
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6-20250929';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const DEEPSEEK_BASE = 'https://api.deepseek.com';
 
 const REVIEW_PROMPT = `你是一位资深前端代码审查专家。请审查以下 PR 的代码变更。
 
@@ -46,8 +46,8 @@ async function main() {
   const diffFile = process.argv[2] || '/tmp/pr_diff.txt';
   const outputFile = process.argv[3] || '/tmp/review-result.json';
 
-  if (!ANTHROPIC_API_KEY) {
-    console.error('ERROR: ANTHROPIC_API_KEY 未设置');
+  if (!DEEPSEEK_API_KEY) {
+    console.error('ERROR: DEEPSEEK_API_KEY 未设置');
     process.exit(1);
   }
 
@@ -55,7 +55,7 @@ async function main() {
   try {
     diffContent = fs.readFileSync(diffFile, 'utf-8');
   } catch {
-    console.warn('WARN: 无法读取 diff 文件，尝试获取变更文件列表');
+    console.warn('WARN: 无法读取 diff 文件');
     diffContent = '（无diff内容，请审查最新提交的变更）';
   }
 
@@ -65,7 +65,7 @@ async function main() {
     process.exit(0);
   }
 
-  // diff过大时截断（Claude上下文限制）
+  // diff过大时截断
   const MAX_DIFF_SIZE = 80000;
   if (diffContent.length > MAX_DIFF_SIZE) {
     console.warn(`WARN: Diff过大 (${diffContent.length} chars)，截断至 ${MAX_DIFF_SIZE} chars`);
@@ -75,18 +75,17 @@ async function main() {
   console.log(`INFO: 发送审查请求，diff ${diffContent.length}字符`);
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model: DEEPSEEK_MODEL,
         max_tokens: 4096,
-        system: '你只返回JSON，不要markdown代码块包裹，不要任何额外文字说明。',
         messages: [
+          { role: 'system', content: '你只返回JSON，不要markdown代码块包裹，不要任何额外文字说明。' },
           { role: 'user', content: REVIEW_PROMPT + '\n\n' + diffContent },
         ],
       }),
@@ -99,7 +98,7 @@ async function main() {
     }
 
     const data = await response.json();
-    const rawText = data.content?.[0]?.text || '';
+    const rawText = data.choices?.[0]?.message?.content || '';
 
     // 尝试从可能的markdown代码块中提取JSON
     let result;
@@ -107,7 +106,7 @@ async function main() {
     try {
       result = JSON.parse(jsonMatch ? jsonMatch[1] : rawText);
     } catch {
-      console.warn('WARN: Claude返回非JSON格式，包装为原始输出');
+      console.warn('WARN: DeepSeek返回非JSON格式，包装为原始输出');
       result = {
         summary: '审查完成（非结构化输出）',
         findings: [{
@@ -115,7 +114,7 @@ async function main() {
           category: 'maintainability',
           file: null,
           line: null,
-          description: 'Claude审查意见（非结构化）',
+          description: 'AI审查意见（非结构化）',
           suggestion: rawText.substring(0, 1000),
         }],
       };
@@ -126,9 +125,10 @@ async function main() {
     (result.findings || []).forEach(f => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
     console.log(`审查完成: critical=${counts.critical} high=${counts.high} medium=${counts.medium} low=${counts.low}`);
 
-    fs.writeFileSync(outputFile, JSON.stringify({ ...result, _counts: counts, _model: CLAUDE_MODEL }, null, 2));
+    fs.writeFileSync(outputFile, JSON.stringify({ ...result, _counts: counts, _model: DEEPSEEK_MODEL }, null, 2));
     console.log(`结果写入: ${outputFile}`);
 
+    // 存在 critical 时退出码非零，但不断言阻止（给 post-comment 决策）
   } catch (err) {
     console.error(`API调用异常: ${err.message}`);
     process.exit(1);

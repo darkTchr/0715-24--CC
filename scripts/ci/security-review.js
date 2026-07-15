@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * security-review.js — 调用 Claude API 进行深度安全审查
+ * security-review.js — 调用 DeepSeek API 进行深度安全审查
  * 用法: node security-review.js <changed_files> <audit_json> <output_json>
  */
 
 const fs = require('fs');
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6-20250929';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const DEEPSEEK_BASE = 'https://api.deepseek.com';
 
 const SECURITY_PROMPT = `你是Web前端安全专家。请对以下文件进行安全审查。
 
@@ -49,9 +50,9 @@ async function main() {
   const auditFile = process.argv[3] || '/tmp/audit-result.json';
   const outputFile = process.argv[4] || '/tmp/claude-security.json';
 
-  if (!ANTHROPIC_API_KEY) {
-    console.warn('WARN: ANTHROPIC_API_KEY 未设置，跳过Claude安全审查');
-    fs.writeFileSync(outputFile, JSON.stringify({ summary: '跳过（无API Key）', riskLevel: 'unknown', findings: [] }));
+  if (!DEEPSEEK_API_KEY) {
+    console.warn('WARN: DEEPSEEK_API_KEY 未设置，跳过AI安全审查');
+    fs.writeFileSync(outputFile, JSON.stringify({ summary: '跳过（无 API Key）', riskLevel: 'unknown', findings: [] }));
     process.exit(0);
   }
 
@@ -67,7 +68,7 @@ async function main() {
   // 读取文件内容（限制总大小）
   const MAX_TOTAL_SIZE = 60000;
   let codeContext = '';
-  for (const file of fileList.slice(0, 30)) { // 最多30个文件
+  for (const file of fileList.slice(0, 30)) {
     try {
       const content = fs.readFileSync(file.trim(), 'utf-8');
       if (codeContext.length + content.length > MAX_TOTAL_SIZE) {
@@ -93,26 +94,33 @@ async function main() {
     auditSummary = 'npm audit结果不可用';
   }
 
-  const fullPrompt = `${SECURITY_PROMPT}\n\n## 依赖审计摘要\n${auditSummary}\n\n## 源代码\n${codeContext}`;
+  const fullPrompt = `${SECURITY_PROMPT}\n\n## 依赖审计摘要\n${auditSummary}\n\n## 源代码\n${codeContext || '（无变更文件）'}`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model: DEEPSEEK_MODEL,
         max_tokens: 4096,
-        system: '你只返回JSON，不要markdown代码块包裹。',
-        messages: [{ role: 'user', content: fullPrompt }],
+        messages: [
+          { role: 'system', content: '你只返回JSON，不要markdown代码块包裹。' },
+          { role: 'user', content: fullPrompt },
+        ],
       }),
     });
 
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error(`API错误 HTTP ${response.status}: ${errBody}`);
+      process.exit(1);
+    }
+
     const data = await response.json();
-    const rawText = data.content?.[0]?.text || '';
+    const rawText = data.choices?.[0]?.message?.content || '';
 
     let result;
     const jsonMatch = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/);
