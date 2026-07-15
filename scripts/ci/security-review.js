@@ -7,7 +7,7 @@
 const fs = require('fs');
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 const DEEPSEEK_BASE = 'https://api.deepseek.com';
 
 const SECURITY_PROMPT = `你是Web前端安全专家。请对以下文件进行安全审查。

@@ -8,7 +8,7 @@
 const fs = require('fs');
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 const DEEPSEEK_BASE = 'https://api.deepseek.com';
 
 const REVIEW_PROMPT = `你是一位资深前端代码审查专家。请审查以下 PR 的代码变更。
