@@ -38,7 +38,7 @@ jobs:
         if: env.DIFF_SIZE > 0
         run: node scripts/ci/claude-review.js /tmp/pr_diff.txt /tmp/review-result.json
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEKSEEK_API_KEY }}
 
       - name: Post Review Comment
         if: always()

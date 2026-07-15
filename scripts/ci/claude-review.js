@@ -47,8 +47,15 @@ async function main() {
   const outputFile = process.argv[3] || '/tmp/review-result.json';
 
   if (!DEEPSEEK_API_KEY) {
-    console.error('ERROR: DEEPSEEK_API_KEY 未设置');
-    process.exit(1);
+    console.warn('WARN: DEEPSEEK_API_KEY 未设置，跳过AI审查');
+    const placeholder = {
+      summary: '⚠️ AI 审查未执行 — DEEPSEEK_API_KEY 未配置',
+      findings: [],
+      _counts: { critical: 0, high: 0, medium: 0, low: 0 },
+      _model: 'none',
+    };
+    fs.writeFileSync(outputFile, JSON.stringify(placeholder, null, 2));
+    process.exit(0);
   }
 
   let diffContent;
